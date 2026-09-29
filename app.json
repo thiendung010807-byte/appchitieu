@@ -2,7 +2,7 @@
   "expo": {
     "name": "Chi Tiêu QR",
     "slug": "chi-tieu-qr",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "scheme": "chitieuqr",
@@ -10,7 +10,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.thiendung010807.chitieuqr",
-      "buildNumber": "2",
+      "buildNumber": "3",
       "icon": "./assets/icon.png",
       "infoPlist": {
         "NSCameraUsageDescription": "Chi Tiêu QR cần camera để quét mã QR thanh toán.",

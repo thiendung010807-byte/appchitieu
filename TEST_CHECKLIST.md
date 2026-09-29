@@ -1,4 +1,4 @@
-# Checklist test v1.1.0
+# Checklist test v1.1.1
 
 ## Số dư
 1. Mở Trang chủ → Đặt số dư → nhập 1.000.000 ₫.
@@ -29,3 +29,12 @@
 1. Cài đặt → nhập giới hạn tháng → Lưu.
 2. Kiểm tra popup xác nhận.
 3. Khoản nhận không được cộng vào "đã chi" của ngân sách tháng.
+
+
+## Regression v1.1.1
+
+- [ ] Mở Nhận tiền → Tạo mã QR → Chọn ngân hàng: danh sách ngân hàng xuất hiện ngay.
+- [ ] Chọn một ngân hàng: quay lại form và tên/BIN ngân hàng đã chọn hiển thị đúng.
+- [ ] Mở danh sách ngân hàng rồi nhấn ×: quay lại form Nhận tiền, màn hình vẫn bấm được.
+- [ ] Đóng form Nhận tiền sau khi đã từng mở danh sách ngân hàng: màn hình chính vẫn nhận touch bình thường.
+- [ ] Tìm kiếm tên/mã/BIN ngân hàng hoạt động và có trạng thái rỗng khi không có kết quả.

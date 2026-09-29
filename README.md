@@ -1,4 +1,4 @@
-# Chi Tiêu QR iOS v1.1.0
+# Chi Tiêu QR iOS v1.1.1
 
 Ứng dụng quản lý thu/chi local-first cho iPhone, viết bằng Expo + React Native + TypeScript + SQLite.
 
@@ -53,3 +53,10 @@ Xem thêm `BUILD_IPA_FREE.md`.
 5. Nếu không thấy, vào `Cài đặt iPhone > Thông báo > Chi Tiêu QR` và bật Cho phép thông báo, Âm thanh và Biểu ngữ.
 
 Local notification không cần server và được iOS lên lịch trên thiết bị.
+
+
+## Sửa lỗi v1.1.1
+
+- Màn hình chọn ngân hàng trong mục Nhận tiền được hiển thị ngay bên trong cùng một native Modal.
+- Không còn chồng hai `Modal` kiểu `pageSheet` trên iOS, tránh tình trạng danh sách không hiện và lớp modal ẩn chặn toàn bộ thao tác sau khi đóng.
+- Chọn ngân hàng hoặc nhấn đóng danh sách sẽ quay lại form Nhận tiền bình thường.

@@ -183,7 +183,6 @@ function ExpenseApp() {
   const [receiveVisible, setReceiveVisible] = useState(false);
   const [receiveDraft, setReceiveDraft] = useState<ReceiveDraft>(DEFAULT_RECEIVE);
   const [receiveQrSession, setReceiveQrSession] = useState<ReceiveQrSession | null>(null);
-  const [receiveBankPickerVisible, setReceiveBankPickerVisible] = useState(false);
   const [reviewId, setReviewId] = useState<number | null>(null);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
 
@@ -699,18 +698,8 @@ function ExpenseApp() {
           draft={receiveDraft}
           onChange={setReceiveDraft}
           onClose={() => setReceiveVisible(false)}
-          onPickBank={() => setReceiveBankPickerVisible(true)}
           onGenerateQr={generateReceiveQr}
           onSaveManual={addManualIncome}
-        />
-        <ReceiveBankPickerModal
-          visible={receiveBankPickerVisible}
-          selectedBin={receiveDraft.bankBin}
-          onClose={() => setReceiveBankPickerVisible(false)}
-          onSelect={(bankBin) => {
-            setReceiveDraft((current) => ({ ...current, bankBin }));
-            setReceiveBankPickerVisible(false);
-          }}
         />
         <ReceiveQrModal
           session={receiveQrSession}
@@ -1376,175 +1365,199 @@ function ReceiveMoneyModal(props: {
   draft: ReceiveDraft;
   onChange: (draft: ReceiveDraft) => void;
   onClose: () => void;
-  onPickBank: () => void;
   onGenerateQr: () => void;
   onSaveManual: () => void;
 }) {
   const { styles, colors } = useAppTheme();
   const [mode, setMode] = useState<'qr' | 'manual'>('qr');
+  const [showBankPicker, setShowBankPicker] = useState(false);
+  const [bankQuery, setBankQuery] = useState('');
   const bank = bankFromBin(props.draft.bankBin);
 
-  useEffect(() => {
-    if (props.visible) setMode('qr');
-  }, [props.visible]);
-
-  return (
-    <Modal visible={props.visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={props.onClose}>
-      <KeyboardAvoidingView style={styles.modalScreen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
-          <ModalHeader title="Nhận tiền" onClose={props.onClose} />
-          <View style={styles.segmentRow}>
-            <ChoiceChip label="Tạo mã QR" selected={mode === 'qr'} onPress={() => setMode('qr')} />
-            <ChoiceChip label="Nhập thủ công" selected={mode === 'manual'} onPress={() => setMode('manual')} />
-          </View>
-
-          {mode === 'qr' ? (
-            <>
-              <View style={styles.paymentInfo}>
-                <Text style={styles.paymentInfoTitle}>VietQR nhận tiền</Text>
-                <Text style={styles.paymentInfoText}>Ngân hàng và số tài khoản sẽ được nhớ cho lần sau. Số tiền nhận sẽ luôn được để trống sau mỗi giao dịch.</Text>
-              </View>
-              <FieldLabel>Ngân hàng nhận</FieldLabel>
-              <Pressable style={styles.bankPickerButton} onPress={props.onPickBank}>
-                <View style={styles.bankPickerTextWrap}>
-                  <Text style={styles.bankPickerLabel}>{bank?.name ?? 'Chọn ngân hàng'}</Text>
-                  {props.draft.bankBin ? <Text style={styles.bankPickerMeta}>BIN {props.draft.bankBin}</Text> : null}
-                </View>
-                <Text style={styles.bankPickerChevron}>›</Text>
-              </Pressable>
-              <FieldLabel>Số tài khoản</FieldLabel>
-              <TextInput
-                value={props.draft.accountNo}
-                onChangeText={(accountNo) => props.onChange({ ...props.draft, accountNo: accountNo.replace(/\D/g, '').slice(0, 19) })}
-                keyboardType="number-pad"
-                placeholder="Nhập số tài khoản"
-                placeholderTextColor={colors.placeholder}
-                style={styles.input}
-              />
-              <FieldLabel>Số tiền cần nhận</FieldLabel>
-              <TextInput
-                value={props.draft.amountText}
-                onChangeText={(text) => props.onChange({ ...props.draft, amountText: formatMoneyInput(text) })}
-                keyboardType="number-pad"
-                placeholder="0"
-                placeholderTextColor={colors.placeholder}
-                style={styles.moneyInput}
-              />
-              <FieldLabel>Tên giao dịch</FieldLabel>
-              <TextInput
-                value={props.draft.transactionName}
-                onChangeText={(transactionName) => props.onChange({ ...props.draft, transactionName })}
-                placeholder="Ví dụ: Nhận tiền ăn nhóm"
-                placeholderTextColor={colors.placeholder}
-                style={styles.input}
-              />
-              <FieldLabel>Nội dung chuyển khoản</FieldLabel>
-              <TextInput
-                value={props.draft.note}
-                onChangeText={(note) => props.onChange({ ...props.draft, note })}
-                placeholder="Không bắt buộc"
-                placeholderTextColor={colors.placeholder}
-                style={styles.input}
-              />
-              <Pressable style={styles.primaryButton} onPress={() => void props.onGenerateQr()}>
-                <Text style={styles.primaryButtonText}>Tạo mã QR nhận tiền</Text>
-              </Pressable>
-            </>
-          ) : (
-            <>
-              <View style={styles.paymentInfo}>
-                <Text style={styles.paymentInfoTitle}>Ghi nhận tiền đã nhận</Text>
-                <Text style={styles.paymentInfoText}>Dùng khi bạn nhận tiền mặt hoặc chuyển khoản bên ngoài mã QR của app.</Text>
-              </View>
-              <FieldLabel>Số tiền đã nhận</FieldLabel>
-              <TextInput
-                value={props.draft.amountText}
-                onChangeText={(text) => props.onChange({ ...props.draft, amountText: formatMoneyInput(text) })}
-                keyboardType="number-pad"
-                placeholder="0"
-                placeholderTextColor={colors.placeholder}
-                style={styles.moneyInput}
-              />
-              <FieldLabel>Tên giao dịch</FieldLabel>
-              <TextInput
-                value={props.draft.transactionName}
-                onChangeText={(transactionName) => props.onChange({ ...props.draft, transactionName })}
-                placeholder="Ví dụ: Hoàn tiền, lương, bạn trả nợ"
-                placeholderTextColor={colors.placeholder}
-                style={styles.input}
-              />
-              <FieldLabel>Ghi chú</FieldLabel>
-              <TextInput
-                value={props.draft.note}
-                onChangeText={(note) => props.onChange({ ...props.draft, note })}
-                placeholder="Không bắt buộc"
-                placeholderTextColor={colors.placeholder}
-                style={styles.input}
-              />
-              <Pressable style={styles.primaryButton} onPress={() => void props.onSaveManual()}>
-                <Text style={styles.primaryButtonText}>Cộng vào số dư</Text>
-              </Pressable>
-            </>
-          )}
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </Modal>
-  );
-}
-
-function ReceiveBankPickerModal(props: {
-  visible: boolean;
-  selectedBin: string;
-  onClose: () => void;
-  onSelect: (bankBin: string) => void;
-}) {
-  const { styles, colors } = useAppTheme();
-  const [query, setQuery] = useState('');
-  const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase();
+  const filteredBanks = useMemo(() => {
+    const needle = bankQuery.trim().toLowerCase();
     if (!needle) return RECEIVING_BANKS;
-    return RECEIVING_BANKS.filter((bank) =>
-      bank.name.toLowerCase().includes(needle) || bank.code.toLowerCase().includes(needle) || bank.bin.includes(needle)
+    return RECEIVING_BANKS.filter((item) =>
+      item.name.toLowerCase().includes(needle) ||
+      item.code.toLowerCase().includes(needle) ||
+      item.bin.includes(needle)
     );
-  }, [query]);
+  }, [bankQuery]);
 
   useEffect(() => {
-    if (props.visible) setQuery('');
+    if (props.visible) {
+      setMode('qr');
+      setShowBankPicker(false);
+      setBankQuery('');
+    }
   }, [props.visible]);
 
+  const closeReceive = useCallback(() => {
+    // Nếu đang ở danh sách ngân hàng, nút back/close chỉ quay lại form nhận tiền.
+    // Điều này tránh để một native Modal ẩn còn giữ lớp chặn touch trên iOS.
+    if (showBankPicker) {
+      setShowBankPicker(false);
+      setBankQuery('');
+      return;
+    }
+    props.onClose();
+  }, [props, showBankPicker]);
+
   return (
-    <Modal visible={props.visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={props.onClose}>
-      <View style={styles.modalScreen}>
-        <View style={styles.bankPickerModalContent}>
-          <ModalHeader title="Chọn ngân hàng" onClose={props.onClose} />
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Tìm tên, mã hoặc BIN ngân hàng"
-            placeholderTextColor={colors.placeholder}
-            style={styles.input}
-            autoCapitalize="none"
-          />
-          <FlatList
-            data={filtered}
-            keyExtractor={(item) => item.bin}
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={styles.bankPickerList}
-            renderItem={({ item }) => {
-              const selected = item.bin === props.selectedBin;
-              return (
-                <Pressable style={[styles.bankPickerListRow, selected && styles.bankRowSelected]} onPress={() => props.onSelect(item.bin)}>
-                  <View style={styles.radioOuter}>{selected ? <View style={styles.radioInner} /> : null}</View>
-                  <View style={styles.bankTextWrap}>
-                    <Text style={styles.bankAppName}>{item.name}</Text>
-                    <Text style={styles.bankMeta}>{item.code} · BIN {item.bin}</Text>
+    <Modal visible={props.visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={closeReceive}>
+      <KeyboardAvoidingView style={styles.modalScreen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        {showBankPicker ? (
+          <View style={styles.bankPickerModalContent}>
+            <ModalHeader title="Chọn ngân hàng" onClose={() => {
+              setShowBankPicker(false);
+              setBankQuery('');
+            }} />
+            <TextInput
+              value={bankQuery}
+              onChangeText={setBankQuery}
+              placeholder="Tìm tên, mã hoặc BIN ngân hàng"
+              placeholderTextColor={colors.placeholder}
+              style={styles.input}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <FlatList
+              style={{ flex: 1 }}
+              data={filteredBanks}
+              keyExtractor={(item) => item.bin}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={styles.bankPickerList}
+              ListEmptyComponent={(
+                <View style={styles.emptyCard}>
+                  <Text style={styles.emptyText}>Không tìm thấy ngân hàng phù hợp.</Text>
+                </View>
+              )}
+              renderItem={({ item }) => {
+                const selected = item.bin === props.draft.bankBin;
+                return (
+                  <Pressable
+                    style={[styles.bankPickerListRow, selected && styles.bankRowSelected]}
+                    onPress={() => {
+                      props.onChange({ ...props.draft, bankBin: item.bin });
+                      setShowBankPicker(false);
+                      setBankQuery('');
+                    }}
+                  >
+                    <View style={styles.radioOuter}>{selected ? <View style={styles.radioInner} /> : null}</View>
+                    <View style={styles.bankTextWrap}>
+                      <Text style={styles.bankAppName}>{item.name}</Text>
+                      <Text style={styles.bankMeta}>{item.code} · BIN {item.bin}</Text>
+                    </View>
+                  </Pressable>
+                );
+              }}
+            />
+          </View>
+        ) : (
+          <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
+            <ModalHeader title="Nhận tiền" onClose={props.onClose} />
+            <View style={styles.segmentRow}>
+              <ChoiceChip label="Tạo mã QR" selected={mode === 'qr'} onPress={() => setMode('qr')} />
+              <ChoiceChip label="Nhập thủ công" selected={mode === 'manual'} onPress={() => setMode('manual')} />
+            </View>
+
+            {mode === 'qr' ? (
+              <>
+                <View style={styles.paymentInfo}>
+                  <Text style={styles.paymentInfoTitle}>VietQR nhận tiền</Text>
+                  <Text style={styles.paymentInfoText}>Ngân hàng và số tài khoản sẽ được nhớ cho lần sau. Số tiền nhận sẽ luôn được để trống sau mỗi giao dịch.</Text>
+                </View>
+                <FieldLabel>Ngân hàng nhận</FieldLabel>
+                <Pressable
+                  style={styles.bankPickerButton}
+                  onPress={() => {
+                    setBankQuery('');
+                    setShowBankPicker(true);
+                  }}
+                >
+                  <View style={styles.bankPickerTextWrap}>
+                    <Text style={styles.bankPickerLabel}>{bank?.name ?? 'Chọn ngân hàng'}</Text>
+                    {props.draft.bankBin ? <Text style={styles.bankPickerMeta}>BIN {props.draft.bankBin}</Text> : null}
                   </View>
+                  <Text style={styles.bankPickerChevron}>›</Text>
                 </Pressable>
-              );
-            }}
-          />
-        </View>
-      </View>
+                <FieldLabel>Số tài khoản</FieldLabel>
+                <TextInput
+                  value={props.draft.accountNo}
+                  onChangeText={(accountNo) => props.onChange({ ...props.draft, accountNo: accountNo.replace(/\D/g, '').slice(0, 19) })}
+                  keyboardType="number-pad"
+                  placeholder="Nhập số tài khoản"
+                  placeholderTextColor={colors.placeholder}
+                  style={styles.input}
+                />
+                <FieldLabel>Số tiền cần nhận</FieldLabel>
+                <TextInput
+                  value={props.draft.amountText}
+                  onChangeText={(text) => props.onChange({ ...props.draft, amountText: formatMoneyInput(text) })}
+                  keyboardType="number-pad"
+                  placeholder="0"
+                  placeholderTextColor={colors.placeholder}
+                  style={styles.moneyInput}
+                />
+                <FieldLabel>Tên giao dịch</FieldLabel>
+                <TextInput
+                  value={props.draft.transactionName}
+                  onChangeText={(transactionName) => props.onChange({ ...props.draft, transactionName })}
+                  placeholder="Ví dụ: Nhận tiền ăn nhóm"
+                  placeholderTextColor={colors.placeholder}
+                  style={styles.input}
+                />
+                <FieldLabel>Nội dung chuyển khoản</FieldLabel>
+                <TextInput
+                  value={props.draft.note}
+                  onChangeText={(note) => props.onChange({ ...props.draft, note })}
+                  placeholder="Không bắt buộc"
+                  placeholderTextColor={colors.placeholder}
+                  style={styles.input}
+                />
+                <Pressable style={styles.primaryButton} onPress={() => void props.onGenerateQr()}>
+                  <Text style={styles.primaryButtonText}>Tạo mã QR nhận tiền</Text>
+                </Pressable>
+              </>
+            ) : (
+              <>
+                <View style={styles.paymentInfo}>
+                  <Text style={styles.paymentInfoTitle}>Ghi nhận tiền đã nhận</Text>
+                  <Text style={styles.paymentInfoText}>Dùng khi bạn nhận tiền mặt hoặc chuyển khoản bên ngoài mã QR của app.</Text>
+                </View>
+                <FieldLabel>Số tiền đã nhận</FieldLabel>
+                <TextInput
+                  value={props.draft.amountText}
+                  onChangeText={(text) => props.onChange({ ...props.draft, amountText: formatMoneyInput(text) })}
+                  keyboardType="number-pad"
+                  placeholder="0"
+                  placeholderTextColor={colors.placeholder}
+                  style={styles.moneyInput}
+                />
+                <FieldLabel>Tên giao dịch</FieldLabel>
+                <TextInput
+                  value={props.draft.transactionName}
+                  onChangeText={(transactionName) => props.onChange({ ...props.draft, transactionName })}
+                  placeholder="Ví dụ: Hoàn tiền, lương, bạn trả nợ"
+                  placeholderTextColor={colors.placeholder}
+                  style={styles.input}
+                />
+                <FieldLabel>Ghi chú</FieldLabel>
+                <TextInput
+                  value={props.draft.note}
+                  onChangeText={(note) => props.onChange({ ...props.draft, note })}
+                  placeholder="Không bắt buộc"
+                  placeholderTextColor={colors.placeholder}
+                  style={styles.input}
+                />
+                <Pressable style={styles.primaryButton} onPress={() => void props.onSaveManual()}>
+                  <Text style={styles.primaryButtonText}>Cộng vào số dư</Text>
+                </Pressable>
+              </>
+            )}
+          </ScrollView>
+        )}
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
