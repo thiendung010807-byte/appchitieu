@@ -1,10 +1,10 @@
-# Chi Tiêu QR iOS v1.1.1
+# ChiTieuQR v1.1.3
 
 Ứng dụng quản lý thu/chi local-first cho iPhone, viết bằng Expo + React Native + TypeScript + SQLite.
 
 ## Tính năng chính
 
-- Quét VietQR/NAPAS và MoMo để ghi nhận khoản chi.
+- Quét VietQR/NAPAS và MoMo để ghi nhận khoản chi; có thể quét bằng camera hoặc chọn ảnh QR từ thư viện.
 - Nhập khoản chi thủ công.
 - Số dư hiện tại: đặt một mốc số dư, sau đó giao dịch hoàn tất tự cộng/trừ.
 - Nhận tiền:
@@ -16,16 +16,18 @@
 - Lịch sử thu/chi, sửa/xóa giao dịch, trạng thái riêng cho khoản nhận.
 - Thống kê tổng thu, tổng chi, chênh lệch và chi theo danh mục.
 - Bộ lọc thời gian tự cuộn mục đang chọn vào giữa.
+- Thanh toán ngân hàng ưu tiên cầu nối VietQR nội bộ để chuyển trực tiếp sang app ngân hàng; nếu bridge không lấy được deeplink sẽ fallback qua URL VietQR/Safari.
 - Dark mode / light mode / theo hệ thống.
 - Tổng kết cuối ngày bằng local notification, giờ và phút tùy chỉnh.
 - Có nút gửi thông báo thử sau 5 giây để kiểm tra quyền iOS.
 - Khi lưu giới hạn tháng sẽ hiện popup xác nhận.
+- Cài đặt có mục Thông tin ứng dụng: phiên bản/build, nhà phát hành, Bundle ID, nền tảng và lưu trữ.
 
 ## Dữ liệu
 
 Dữ liệu giao dịch, số dư, ngân sách và cài đặt được lưu trong SQLite trên thiết bị.
 
-Ảnh QR nhận tiền được tạo bằng Quick Link ảnh của VietQR nên cần kết nối mạng khi tạo/hiển thị QR. Thông tin ngân hàng nhận được lưu local để dùng cho lần sau.
+Ảnh QR nhận tiền được tạo bằng Quick Link VietQR template `qr_only` nên cần kết nối mạng khi tạo/hiển thị QR. Thông tin ngân hàng nhận được lưu local để dùng cho lần sau.
 
 ## Chạy thử
 
@@ -60,3 +62,8 @@ Local notification không cần server và được iOS lên lịch trên thiế
 - Màn hình chọn ngân hàng trong mục Nhận tiền được hiển thị ngay bên trong cùng một native Modal.
 - Không còn chồng hai `Modal` kiểu `pageSheet` trên iOS, tránh tình trạng danh sách không hiện và lớp modal ẩn chặn toàn bộ thao tác sau khi đóng.
 - Chọn ngân hàng hoặc nhấn đóng danh sách sẽ quay lại form Nhận tiền bình thường.
+
+
+## Thay đổi v1.1.3
+
+Xem `CHANGELOG_v1.1.3.md`.

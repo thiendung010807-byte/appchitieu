@@ -26,11 +26,13 @@ import {
   useColorScheme,
   View
 } from 'react-native';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { Camera, CameraView, useCameraPermissions } from 'expo-camera';
 import type { BarcodeScanningResult } from 'expo-camera';
 import { SQLiteProvider, useSQLiteContext } from 'expo-sqlite';
 import { StatusBar } from 'expo-status-bar';
 import * as Clipboard from 'expo-clipboard';
+import * as ImagePicker from 'expo-image-picker';
+import { WebView } from 'react-native-webview';
 
 import { PAYMENT_BANKS, RECEIVING_BANKS, bankFromBin } from './src/banks';
 import { calculateBalanceSnapshot } from './src/balance';
@@ -139,6 +141,40 @@ const DEFAULT_RECEIVE: ReceiveDraft = {
   note: ''
 };
 
+const APP_INFO = {
+  name: 'Chi Tiêu QR',
+  version: '1.1.3',
+  build: '5',
+  publisher: 'Thiên Dũng',
+  bundleId: 'com.thiendung010807.chitieuqr',
+  storage: 'Cục bộ trên thiết bị (SQLite)',
+  platform: 'iOS · Expo SDK 57'
+};
+
+const PAYMENT_BRIDGE_JS = `
+(function () {
+  var originalOpen = window.open;
+  window.open = function (url) {
+    if (typeof url === 'string' && !/^(https?:|about:|data:|blob:)/i.test(url)) {
+      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'external-url', url: url }));
+      return null;
+    }
+    return originalOpen ? originalOpen.apply(window, arguments) : null;
+  };
+
+  document.addEventListener('click', function (event) {
+    var node = event.target;
+    while (node && node.tagName !== 'A') node = node.parentElement;
+    if (!node || !node.href) return;
+    if (!/^(https?:|about:|data:|blob:)/i.test(node.href)) {
+      event.preventDefault();
+      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'external-url', url: node.href }));
+    }
+  }, true);
+})();
+true;
+`;
+
 const ThemeContext = createContext<{ styles: AppStyles; colors: Palette; isDark: boolean } | null>(null);
 
 function useAppTheme() {
@@ -185,11 +221,14 @@ function ExpenseApp() {
   const [receiveQrSession, setReceiveQrSession] = useState<ReceiveQrSession | null>(null);
   const [reviewId, setReviewId] = useState<number | null>(null);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+  const [paymentBridgeUrl, setPaymentBridgeUrl] = useState<string | null>(null);
 
   const pendingReviewId = useRef<number | null>(null);
   const pendingMerchantKey = useRef<string | undefined>(undefined);
   const pendingCategory = useRef('other');
   const wasBackgrounded = useRef(false);
+  const paymentBridgeFallbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const paymentBridgeOpening = useRef(false);
 
   const isDark = themeMode === 'dark' || (themeMode === 'system' && systemScheme === 'dark');
   const colors = useMemo(() => makePalette(isDark), [isDark]);
@@ -236,7 +275,14 @@ function ExpenseApp() {
 
   useEffect(() => {
     const onStateChange = (next: AppStateStatus) => {
-      if (pendingReviewId.current && next !== 'active') wasBackgrounded.current = true;
+      if (pendingReviewId.current && next !== 'active') {
+        wasBackgrounded.current = true;
+        if (paymentBridgeFallbackTimer.current) {
+          clearTimeout(paymentBridgeFallbackTimer.current);
+          paymentBridgeFallbackTimer.current = null;
+        }
+        setPaymentBridgeUrl(null);
+      }
       if (next === 'active') {
         setDayTick(new Date());
         void refresh();
@@ -247,7 +293,10 @@ function ExpenseApp() {
       }
     };
     const subscription = AppState.addEventListener('change', onStateChange);
-    return () => subscription.remove();
+    return () => {
+      subscription.remove();
+      if (paymentBridgeFallbackTimer.current) clearTimeout(paymentBridgeFallbackTimer.current);
+    };
   }, [refresh]);
 
   const completedTransactions = useMemo(
@@ -355,18 +404,54 @@ function ExpenseApp() {
           amount,
           note: paymentDraft.note,
           receiverName: paymentDraft.qr.receiverName,
-          returnUrl: 'chitieuqr://payment-return'
+          returnUrl: 'https://vietqr.io'
         });
 
     setPaymentDraft(null);
     await refresh();
-    try {
-      await Linking.openURL(link);
-    } catch {
-      setReviewId(id);
-      Alert.alert('Không mở được app thanh toán', 'Giao dịch vẫn được giữ ở trạng thái chờ để bạn xử lý sau.');
+
+    if (isMomo) {
+      try {
+        await Linking.openURL(link);
+      } catch {
+        setReviewId(id);
+        Alert.alert('Không mở được MoMo', 'Giao dịch vẫn được giữ ở trạng thái chờ để bạn xử lý sau.');
+      }
+      return;
     }
+
+    paymentBridgeOpening.current = false;
+    setPaymentBridgeUrl(link);
+    if (paymentBridgeFallbackTimer.current) clearTimeout(paymentBridgeFallbackTimer.current);
+    paymentBridgeFallbackTimer.current = setTimeout(() => {
+      if (!paymentBridgeOpening.current) {
+        void Linking.openURL(link).catch(() => {
+          setPaymentBridgeUrl(null);
+          setReviewId(id);
+          Alert.alert('Không mở được app thanh toán', 'Giao dịch vẫn được giữ ở trạng thái chờ để bạn xử lý sau.');
+        });
+      }
+    }, 3000);
   }, [db, paymentBankId, paymentDraft, refresh]);
+
+  const openExternalFromPaymentBridge = useCallback((url: string) => {
+    if (!url || /^(https?:|about:|data:|blob:)/i.test(url)) return false;
+    if (paymentBridgeOpening.current) return true;
+
+    paymentBridgeOpening.current = true;
+    void Linking.openURL(url)
+      .then(() => {
+        if (paymentBridgeFallbackTimer.current) {
+          clearTimeout(paymentBridgeFallbackTimer.current);
+          paymentBridgeFallbackTimer.current = null;
+        }
+        setPaymentBridgeUrl(null);
+      })
+      .catch(() => {
+        paymentBridgeOpening.current = false;
+      });
+    return true;
+  }, []);
 
   const finishReview = useCallback(async (paid: boolean) => {
     if (!reviewId) return;
@@ -683,6 +768,10 @@ function ExpenseApp() {
           )}
         </View>
 
+        <PaymentBridge
+          url={paymentBridgeUrl}
+          onExternalUrl={openExternalFromPaymentBridge}
+        />
         <BottomTabs tab={tab} onChange={setTab} onScan={() => setScannerVisible(true)} />
         <ScannerModal visible={scannerVisible} onClose={() => setScannerVisible(false)} onScanned={handleScan} />
         <PaymentModal draft={paymentDraft} paymentBankId={paymentBankId} onChange={setPaymentDraft} onClose={() => setPaymentDraft(null)} onPay={startBankPayment} />
@@ -1055,9 +1144,18 @@ function SettingsScreen(props: {
         </View>
       </SettingsSection>
 
+      <SettingsSection title="Thông tin ứng dụng">
+        <InfoRow label="Tên ứng dụng" value={APP_INFO.name} />
+        <InfoRow label="Phiên bản" value={`${APP_INFO.version} (${APP_INFO.build})`} />
+        <InfoRow label="Nhà phát hành" value={APP_INFO.publisher} />
+        <InfoRow label="Bundle ID" value={APP_INFO.bundleId} />
+        <InfoRow label="Nền tảng" value={APP_INFO.platform} />
+        <InfoRow label="Lưu trữ dữ liệu" value={APP_INFO.storage} last />
+      </SettingsSection>
+
       <View style={styles.privacyCard}>
         <Text style={styles.privacyTitle}>🔒 Local-first</Text>
-        <Text style={styles.privacyText}>Lịch sử, số dư, ngân sách và tùy chỉnh nằm trong SQLite trên iPhone. Riêng ảnh VietQR nhận tiền được tải từ dịch vụ ảnh VietQR khi bạn tạo mã.</Text>
+        <Text style={styles.privacyText}>Lịch sử, số dư, ngân sách và tùy chỉnh nằm trong SQLite trên iPhone. Ảnh QR bạn chọn từ thư viện chỉ được đọc trên thiết bị; ảnh VietQR nhận tiền được tải từ VietQR khi bạn tạo mã.</Text>
       </View>
     </ScrollView>
   );
@@ -1134,6 +1232,16 @@ function SettingsSection(props: { title: string; children: React.ReactNode }) {
   );
 }
 
+function InfoRow(props: { label: string; value: string; last?: boolean }) {
+  const { styles } = useAppTheme();
+  return (
+    <View style={[styles.infoRow, props.last && styles.infoRowLast]}>
+      <Text style={styles.infoLabel}>{props.label}</Text>
+      <Text style={styles.infoValue} selectable>{props.value}</Text>
+    </View>
+  );
+}
+
 function BottomTabs(props: { tab: Tab; onChange: (tab: Tab) => void; onScan: () => void }) {
   const { styles } = useAppTheme();
   const items: Array<{ id: Tab; icon: string; label: string }> = [
@@ -1168,6 +1276,7 @@ function ScannerModal(props: { visible: boolean; onClose: () => void; onScanned:
   const unlockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [layout, setLayout] = useState({ width: 0, height: 0 });
   const [scanMessage, setScanMessage] = useState('Đưa toàn bộ mã QR vào trong khung');
+  const [pickingImage, setPickingImage] = useState(false);
   const scanSize = 270;
   const scanTop = layout.height ? Math.round(layout.height * 0.28) : 220;
   const scanLeft = layout.width ? Math.round((layout.width - scanSize) / 2) : 0;
@@ -1175,10 +1284,20 @@ function ScannerModal(props: { visible: boolean; onClose: () => void; onScanned:
   useEffect(() => {
     if (props.visible) {
       lockedRef.current = false;
+      setPickingImage(false);
       setScanMessage('Đưa toàn bộ mã QR vào trong khung');
     }
     return () => { if (unlockTimerRef.current) clearTimeout(unlockTimerRef.current); };
   }, [props.visible]);
+
+  const unlockWithMessage = useCallback((message: string) => {
+    setScanMessage(message);
+    if (unlockTimerRef.current) clearTimeout(unlockTimerRef.current);
+    unlockTimerRef.current = setTimeout(() => {
+      lockedRef.current = false;
+      setScanMessage('Đưa toàn bộ mã QR vào trong khung');
+    }, 1800);
+  }, []);
 
   const isInsideScanBox = useCallback((result: BarcodeScanningResult) => {
     if (!layout.width || !layout.height) return false;
@@ -1202,21 +1321,50 @@ function ScannerModal(props: { visible: boolean; onClose: () => void; onScanned:
     lockedRef.current = true;
     const outcome = await props.onScanned(result.data);
     if (outcome.accepted) return;
-    setScanMessage(outcome.message || 'Không đọc được mã này.');
-    unlockTimerRef.current = setTimeout(() => {
-      lockedRef.current = false;
-      setScanMessage('Đưa toàn bộ mã QR vào trong khung');
-    }, 1500);
-  }, [isInsideScanBox, props]);
+    unlockWithMessage(outcome.message || 'Không đọc được mã này.');
+  }, [isInsideScanBox, props, unlockWithMessage]);
+
+  const pickQrImage = useCallback(async () => {
+    if (pickingImage || lockedRef.current) return;
+    setPickingImage(true);
+    lockedRef.current = true;
+    setScanMessage('Đang đọc QR trong ảnh…');
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: false,
+        quality: 1
+      });
+      if (result.canceled || !result.assets?.[0]?.uri) {
+        lockedRef.current = false;
+        setScanMessage('Đưa toàn bộ mã QR vào trong khung');
+        return;
+      }
+
+      const found = await Camera.scanFromURLAsync(result.assets[0].uri, ['qr']);
+      const qr = found.find((item) => item.type === 'qr') ?? found[0];
+      if (!qr?.data) {
+        unlockWithMessage('Không tìm thấy mã QR trong ảnh đã chọn.');
+        return;
+      }
+      const outcome = await props.onScanned(qr.data);
+      if (!outcome.accepted) unlockWithMessage(outcome.message || 'QR trong ảnh chưa được hỗ trợ.');
+    } catch {
+      unlockWithMessage('Không thể đọc ảnh này. Hãy thử ảnh QR rõ hơn.');
+    } finally {
+      setPickingImage(false);
+    }
+  }, [pickingImage, props, unlockWithMessage]);
 
   return (
     <Modal visible={props.visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={props.onClose}>
       <View style={styles.scannerRoot} onLayout={(event) => setLayout(event.nativeEvent.layout)}>
         {!permission?.granted ? (
           <View style={styles.permissionBox}>
-            <Text style={styles.permissionTitle}>Cần quyền camera</Text>
-            <Text style={styles.permissionText}>Camera chỉ dùng để đọc mã QR thanh toán.</Text>
+            <Text style={styles.permissionTitle}>Quét mã QR</Text>
+            <Text style={styles.permissionText}>Bạn có thể dùng camera hoặc chọn ảnh QR có sẵn trong thư viện.</Text>
             <Pressable style={styles.primaryButton} onPress={() => void requestPermission()}><Text style={styles.primaryButtonText}>Cho phép camera</Text></Pressable>
+            <Pressable style={styles.secondaryButton} onPress={() => void pickQrImage()}><Text style={styles.secondaryButtonText}>{pickingImage ? 'Đang đọc ảnh…' : 'Chọn ảnh QR từ thư viện'}</Text></Pressable>
             <Pressable style={styles.textButton} onPress={props.onClose}><Text style={styles.textButtonText}>Đóng</Text></Pressable>
           </View>
         ) : (
@@ -1235,12 +1383,59 @@ function ScannerModal(props: { visible: boolean; onClose: () => void; onScanned:
             <View style={[styles.scannerGuideWrap, { top: scanTop }]} pointerEvents="none">
               <View style={styles.scannerGuide} /><Text style={styles.scannerHint}>{scanMessage}</Text>
             </View>
+            <Pressable style={styles.galleryQrButton} onPress={() => void pickQrImage()}>
+              <Text style={styles.galleryQrButtonIcon}>▧</Text>
+              <Text style={styles.galleryQrButtonText}>{pickingImage ? 'Đang đọc ảnh…' : 'Chọn ảnh QR'}</Text>
+            </Pressable>
           </>
         ) : null}
       </View>
     </Modal>
   );
 }
+
+function PaymentBridge(props: { url: string | null; onExternalUrl: (url: string) => boolean }) {
+  if (!props.url) return null;
+  return (
+    <View style={stylesHiddenPaymentBridge.wrapper} pointerEvents="none">
+      <WebView
+        style={{ flex: 1 }}
+        source={{ uri: props.url }}
+        originWhitelist={['*']}
+        javaScriptEnabled
+        domStorageEnabled
+        setSupportMultipleWindows={false}
+        injectedJavaScriptBeforeContentLoaded={PAYMENT_BRIDGE_JS}
+        onShouldStartLoadWithRequest={(request) => !props.onExternalUrl(request.url)}
+        onOpenWindow={(event) => {
+          const targetUrl = event.nativeEvent.targetUrl;
+          if (props.onExternalUrl(targetUrl)) return;
+        }}
+        onMessage={(event) => {
+          try {
+            const message = JSON.parse(event.nativeEvent.data) as { type?: string; url?: string };
+            if (message.type === 'external-url' && message.url) props.onExternalUrl(message.url);
+          } catch {
+            // Ignore unrelated messages from the bridge page.
+          }
+        }}
+        onError={() => undefined}
+        onHttpError={() => undefined}
+      />
+    </View>
+  );
+}
+
+const stylesHiddenPaymentBridge = StyleSheet.create({
+  wrapper: {
+    position: 'absolute',
+    width: 2,
+    height: 2,
+    left: 0,
+    top: 0,
+    opacity: 0
+  }
+});
 
 function PaymentModal(props: {
   draft: PaymentDraft | null;
@@ -1875,6 +2070,7 @@ function createAppStyles(c: Palette) {
     bankTextWrap: { flex: 1, marginLeft: 12 }, bankAppName: { fontSize: 14, fontWeight: '800', color: c.text }, bankMeta: { marginTop: 3, fontSize: 11, color: c.muted }, autofillBadge: { fontSize: 10, fontWeight: '800', color: c.success, backgroundColor: c.primarySoft, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 999 },
     openBadge: { fontSize: 10, fontWeight: '800', color: c.text2, backgroundColor: c.surface, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 999 }, privacyCard: { marginTop: 18, padding: 18, borderRadius: 20, backgroundColor: c.primarySoft },
     privacyTitle: { fontSize: 15, fontWeight: '800', color: c.text }, privacyText: { marginTop: 6, fontSize: 13, lineHeight: 20, color: c.text2 },
+    infoRow: { minHeight: 50, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 18, paddingVertical: 13, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.border }, infoRowLast: { borderBottomWidth: 0 }, infoLabel: { flexShrink: 0, fontSize: 13, color: c.muted }, infoValue: { flex: 1, textAlign: 'right', fontSize: 13, fontWeight: '700', color: c.text },
     tabBar: { height: 88, paddingBottom: 16, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', backgroundColor: c.surface, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.border }, tabButton: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3 },
     tabIcon: { fontSize: 20, color: c.muted }, tabLabel: { fontSize: 10, fontWeight: '700', color: c.muted }, tabActive: { color: c.primary }, scanFab: { width: 58, height: 58, marginHorizontal: 7, marginTop: -28, borderRadius: 29, backgroundColor: c.primaryStrong, alignItems: 'center', justifyContent: 'center', borderWidth: 5, borderColor: c.bg }, scanFabIcon: { fontSize: 25, fontWeight: '800', color: c.white },
     scannerRoot: { flex: 1, backgroundColor: '#000' }, scannerTop: { position: 'absolute', top: 58, left: 20, right: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', zIndex: 3 }, scannerClose: { width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(0,0,0,0.48)', alignItems: 'center', justifyContent: 'center' }, scannerCloseText: { color: '#FFF', fontSize: 30, lineHeight: 32 }, scannerTitle: { color: '#FFF', fontSize: 17, fontWeight: '800' }, scannerSpacer: { width: 42 },

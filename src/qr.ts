@@ -130,8 +130,8 @@ export function buildVietQrDeeplink(params: {
   if (params.note?.trim()) query.push(`tn=${encodeURIComponent(params.note.trim().slice(0, 50))}`);
   if (params.receiverName?.trim()) query.push(`bn=${encodeURIComponent(params.receiverName.trim())}`);
 
-  // MBBank autofill được VietQR công bố với callback `url`. Khi đang thử bằng
-  // Expo Go, dùng HTTPS callback ổn định; app vẫn tự phát hiện lúc người dùng quay lại.
+  // VietQR/MBBank autofill được công bố với tham số callback `url` dạng HTTPS.
+  // Giữ HTTPS callback để không làm hỏng luồng autofill; app tự phát hiện khi người dùng quay lại bằng AppState.
   query.push(`url=${encodeURIComponent(params.returnUrl || 'https://vietqr.io')}`);
 
   return `https://dl.vietqr.io/pay?${query.join('&')}`;
@@ -143,7 +143,7 @@ export function buildVietQrImageUrl(params: {
   amount: number;
   note?: string;
 }) {
-  const base = `https://img.vietqr.io/image/${encodeURIComponent(params.bankBin)}-${encodeURIComponent(params.accountNo)}-compact2.png`;
+  const base = `https://img.vietqr.io/image/${encodeURIComponent(params.bankBin)}-${encodeURIComponent(params.accountNo)}-qr_only.png`;
   const query = new URLSearchParams();
   if (params.amount > 0) query.set('amount', String(Math.round(params.amount)));
   if (params.note?.trim()) query.set('addInfo', params.note.trim().slice(0, 50));
