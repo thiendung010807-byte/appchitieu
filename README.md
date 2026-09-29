@@ -1,4 +1,4 @@
-# ChiTieuQR v1.1.3
+# ChiTieuQR v1.1.4
 
 Ứng dụng quản lý thu/chi local-first cho iPhone, viết bằng Expo + React Native + TypeScript + SQLite.
 
@@ -64,6 +64,10 @@ Local notification không cần server và được iOS lên lịch trên thiế
 - Chọn ngân hàng hoặc nhấn đóng danh sách sẽ quay lại form Nhận tiền bình thường.
 
 
-## Thay đổi v1.1.3
+## Thay đổi v1.1.4
 
-Xem `CHANGELOG_v1.1.3.md`.
+Xem `CHANGELOG_v1.1.4.md`.
+
+
+## v1.1.4
+Sửa nút Chọn ảnh QR bị ẩn phía sau camera khi quyền camera đã được cấp.
