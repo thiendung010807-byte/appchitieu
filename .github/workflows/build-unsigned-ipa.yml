@@ -1,0 +1,150 @@
+name: Build unsigned iOS IPA
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    name: Build iOS
+    runs-on: macos-26
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 26.6
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
+          xcodebuild -version
+          swift --version
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Expo diagnostics
+        continue-on-error: true
+        run: |
+          npx expo --version
+          npx expo-doctor || true
+
+      - name: Expo prebuild iOS
+        run: npx expo prebuild --platform ios --clean --no-install
+
+      - name: Install CocoaPods dependencies
+        run: |
+          cd ios
+          pod install --repo-update
+
+      - name: Detect Xcode workspace and scheme
+        id: xcode
+        shell: bash
+        run: |
+          set -euo pipefail
+          WORKSPACE=$(find ios -maxdepth 1 -name '*.xcworkspace' -print -quit)
+          if [ -z "$WORKSPACE" ]; then
+            echo "ERROR: No .xcworkspace found in ios/"
+            exit 1
+          fi
+          xcodebuild -workspace "$WORKSPACE" -list -json > xcode-project-info.json
+          SCHEME=$(python3 - <<'PY'
+          import json
+          with open("xcode-project-info.json", "r", encoding="utf-8") as f:
+              data = json.load(f)
+          schemes = data.get("workspace", {}).get("schemes", [])
+          if not schemes:
+              raise SystemExit("No Xcode scheme found")
+          print(schemes[0])
+          PY
+          )
+          echo "workspace=$WORKSPACE" >> "$GITHUB_OUTPUT"
+          echo "scheme=$SCHEME" >> "$GITHUB_OUTPUT"
+          echo "Workspace: $WORKSPACE"
+          echo "Scheme: $SCHEME"
+
+      - name: Build unsigned iOS app
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          xcodebuild \
+            -workspace "${{ steps.xcode.outputs.workspace }}" \
+            -scheme "${{ steps.xcode.outputs.scheme }}" \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            clean build \
+            2>&1 | tee build/xcodebuild.log
+
+      - name: Locate built app
+        id: app
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_PATH=$(find build/DerivedData/Build/Products/Release-iphoneos -maxdepth 2 -type d -name "*.app" -print -quit)
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: Could not find compiled .app"
+            find build/DerivedData/Build/Products -maxdepth 3 -print || true
+            exit 1
+          fi
+          echo "app_path=$APP_PATH" >> "$GITHUB_OUTPUT"
+          echo "Found app: $APP_PATH"
+
+      - name: Create unsigned IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_PATH="${{ steps.app.outputs.app_path }}"
+          rm -rf build/ipa
+          mkdir -p build/ipa/Payload
+          cp -R "$APP_PATH" build/ipa/Payload/
+          cd build/ipa
+          zip -qry ../ChiTieuQR-unsigned.ipa Payload
+          cd ../..
+          ls -lh build/ChiTieuQR-unsigned.ipa
+
+      - name: Verify IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f build/ChiTieuQR-unsigned.ipa
+          unzip -l build/ChiTieuQR-unsigned.ipa | head -100
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChiTieuQR-unsigned-ipa
+          path: build/ChiTieuQR-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Extract Xcode errors
+        if: failure()
+        shell: bash
+        run: |
+          mkdir -p build
+          if [ -f build/xcodebuild.log ]; then
+            grep -i -E "error:|BUILD FAILED|The following build commands failed|PhaseScriptExecution|Could not resolve package dependencies|Swift tools version" build/xcodebuild.log | tail -200 > build/xcode-errors.txt || true
+            cat build/xcode-errors.txt || true
+            tail -300 build/xcodebuild.log || true
+          fi
+
+      - name: Upload Xcode failure log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChiTieuQR-xcode-error-log
+          path: |
+            build/xcodebuild.log
+            build/xcode-errors.txt
+            xcode-project-info.json
+          if-no-files-found: ignore
+          retention-days: 7

@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "Chi Tiêu QR",
+    "slug": "chi-tieu-qr",
+    "version": "1.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "scheme": "chitieuqr",
+    "icon": "./assets/icon.png",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.thiendung010807.chitieuqr",
+      "buildNumber": "2",
+      "icon": "./assets/icon.png",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Chi Tiêu QR cần camera để quét mã QR thanh toán.",
+        "NSUserNotificationsUsageDescription": "Chi Tiêu QR dùng thông báo để gửi tổng kết chi tiêu cuối ngày."
+      }
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Cho phép Chi Tiêu QR dùng camera để quét mã QR thanh toán.",
+          "barcodeScannerEnabled": true,
+          "recordAudioAndroid": false
+        }
+      ],
+      "expo-notifications"
+    ]
+  }
+}
